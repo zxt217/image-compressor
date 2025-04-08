@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图片压缩工具</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@400;500;600&display=swap">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>图片压缩工具</h1>
+            <p class="subtitle">上传并压缩您的图片，减小文件大小</p>
+        </header>
+
+        <main>
+            <div class="upload-container">
+                <div class="upload-area" id="upload-area">
+                    <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <p class="upload-text">将图片拖放到此处，或<span>浏览</span></p>
+                    <p class="upload-hint">支持批量上传最多10张 PNG、JPG 格式图片</p>
+                    <input type="file" id="file-input" accept=".png,.jpg,.jpeg" multiple hidden>
+                </div>
+
+                <div class="image-queue-container hidden" id="image-queue-container">
+                    <h3>等待处理的图片 (<span id="queue-count">0</span>)</h3>
+                    <div class="image-queue" id="image-queue">
+                        <!-- 上传的图片会显示在这里 -->
+                    </div>
+                </div>
+
+                <div class="settings">
+                    <div class="setting-group">
+                        <label for="quality-slider">压缩质量：<span id="quality-value">80%</span></label>
+                        <input type="range" id="quality-slider" min="1" max="100" value="80" class="slider">
+                    </div>
+                </div>
+
+                <button id="compress-button" class="button-primary" disabled>压缩全部图片</button>
+                <button id="add-more-button" class="button-secondary hidden">添加更多图片</button>
+            </div>
+
+            <div class="result-container hidden" id="result-container">
+                <h2>压缩结果</h2>
+                <div class="batch-actions">
+                    <button id="select-all-button" class="button-secondary">全选</button>
+                    <button id="select-none-button" class="button-secondary">取消全选</button>
+                    <button id="download-selected-button" class="button-primary" disabled>下载所选图片</button>
+                </div>
+                
+                <div class="results-grid" id="results-grid">
+                    <!-- 压缩结果会显示在这里 -->
+                </div>
+
+                <div class="actions">
+                    <button id="new-batch-button" class="button-secondary">开始新批次</button>
+                </div>
+            </div>
+        </main>
+
+        <div class="loader hidden" id="loader">
+            <div class="spinner"></div>
+            <p>正在处理中...<span id="processing-status"></span></p>
+        </div>
+    </div>
+
+    <footer>
+        <p>© 2025 图片压缩工具</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html> 
