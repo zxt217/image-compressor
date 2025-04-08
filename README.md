@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 图片压缩工具
 
 一个具有苹果风格设计的网页应用，用于压缩PNG和JPG图片，减小文件大小。
@@ -78,3 +79,7 @@ image_compressor/
 
 - Vercel上的文件系统是临时的，所有上传的图片会在重新部署后丢失
 - 对于生产环境，建议使用如[Vercel Blob Storage](https://vercel.com/docs/storage/vercel-blob)、AWS S3或其他云存储服务来存储图片 
+=======
+# image-compressor
+image-compressor
+>>>>>>> 89cbd0d4baac4c2ad800e03fa64bcd55d8f02f71
