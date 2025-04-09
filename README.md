@@ -1,85 +1,71 @@
-<<<<<<< HEAD
 # 图片压缩工具
 
-一个具有苹果风格设计的网页应用，用于压缩PNG和JPG图片，减小文件大小。
+一个基于 Flask 的在线图片压缩工具，支持批量上传和处理。
 
-## 功能
+## 功能特点
 
-- 上传PNG、JPG格式图片
-- 可调节压缩比例
-- 实时预览原图和压缩后的图片
-- 显示压缩前后的文件大小
-- 下载压缩后的图片
+- 支持多图片批量上传
+- 拖拽上传支持
+- 可调节压缩质量
+- 实时压缩进度显示
+- 原图与压缩图对比预览
+- 支持批量下载
+- 自动清理过期文件
 
-## 项目结构
+## 技术栈
 
-```
-image_compressor/
-├── api/               # Vercel部署相关
-│   └── index.py       # Vercel入口文件
-├── app.py             # Flask应用主文件
-├── static/            # 静态资源
-│   ├── css/           # 样式文件
-│   │   └── styles.css # 主样式表
-│   ├── js/            # JavaScript文件
-│   │   └── script.js  # 主脚本
-│   └── uploads/       # 上传的图片存储目录
-├── templates/         # HTML模板
-│   └── index.html     # 主页面
-├── requirements.txt   # 项目依赖
-└── vercel.json        # Vercel配置文件
+- 后端：Flask
+- 图片处理：Pillow
+- 前端：Bootstrap 5
+- 部署：Vercel
+
+## 本地开发
+
+1. 克隆仓库：
+```bash
+git clone https://github.com/your-username/image-compressor.git
+cd image-compressor
 ```
 
-## 本地安装与使用
+2. 创建虚拟环境：
+```bash
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate     # Windows
+```
 
-1. 安装依赖：
-   ```
-   pip install -r requirements.txt
-   ```
+3. 安装依赖：
+```bash
+pip install -r requirements.txt
+```
 
-2. 运行应用：
-   ```
-   python app.py
-   ```
+4. 运行应用：
+```bash
+python app.py
+```
 
-3. 在浏览器中访问：
-   ```
-   http://localhost:5000
-   ```
+访问 http://localhost:5000 即可使用。
 
-## 部署到Vercel
+## 环境变量
 
-### 前提条件
+- `SECRET_KEY`: 应用密钥
+- `PORT`: 运行端口（默认 5000）
+- `LOG_LEVEL`: 日志级别（默认 INFO）
 
-- [Vercel账号](https://vercel.com/signup)
-- [Git](https://git-scm.com/downloads)
-- [Vercel CLI](https://vercel.com/cli) (可选)
+## 部署到 Vercel
 
-### 部署步骤
+1. Fork 本仓库
+2. 在 Vercel 中导入项目
+3. 设置环境变量
+4. 完成部署
 
-1. 将项目推送到GitHub、GitLab或Bitbucket仓库
+## 注意事项
 
-2. 使用Vercel CLI部署（方法一）：
-   ```
-   # 安装Vercel CLI
-   npm i -g vercel
+- 上传文件大小限制为 50MB
+- 支持的图片格式：PNG、JPG、JPEG
+- 压缩文件保留 7 天后自动清理
+- 建议使用现代浏览器以获得最佳体验
 
-   # 部署
-   vercel
-   ```
+## License
 
-3. 通过Vercel网站部署（方法二）：
-   - 登录[Vercel](https://vercel.com/)
-   - 点击"New Project"
-   - 导入你的Git仓库
-   - 选择项目
-   - 点击"Deploy"
-
-### 注意事项
-
-- Vercel上的文件系统是临时的，所有上传的图片会在重新部署后丢失
-- 对于生产环境，建议使用如[Vercel Blob Storage](https://vercel.com/docs/storage/vercel-blob)、AWS S3或其他云存储服务来存储图片 
-=======
-# image-compressor
-image-compressor
->>>>>>> 89cbd0d4baac4c2ad800e03fa64bcd55d8f02f71
+MIT

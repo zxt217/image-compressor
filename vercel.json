@@ -2,19 +2,18 @@
     "version": 2,
     "builds": [
       {
-        "src": "api/index.py",
-        "use": "@vercel/python",
-        "config": {
-          "maxLambdaSize": "15mb",
-          "runtime": "python3.9",
-          "buildCommand": "chmod +x build.sh && ./build.sh"
-        }
+        "src": "app.py",
+        "use": "@vercel/python"
       }
     ],
     "routes": [
       {
         "src": "/(.*)",
-        "dest": "api/index.py"
+        "dest": "app.py"
       }
-    ]
+    ],
+    "env": {
+      "PYTHONPATH": ".",
+      "MAX_BODY_SIZE": "50mb"
+    }
   }

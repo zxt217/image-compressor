@@ -13,17 +13,27 @@ from flask import Flask, render_template, request, jsonify, send_from_directory,
 from PIL import Image
 from io import BytesIO
 import zipfile
+from utils.cleaner import FileCleaner
+import config
 
 # 配置日志
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=getattr(logging, config.LOG_LEVEL),
+    format=config.LOG_FORMAT,
+    filename=config.LOG_FILE
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER', 'static/uploads')
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB最大上传限制
+app.config['UPLOAD_FOLDER'] = config.UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = config.MAX_CONTENT_LENGTH
+app.config['SECRET_KEY'] = config.SECRET_KEY
 
 # 确保上传目录存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# 初始化文件清理器
+cleaner = FileCleaner()
 
 # 允许的文件类型
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
@@ -43,17 +53,20 @@ def allowed_file(filename):
 
 def get_file_size(file_path):
     """
-    获取文件大小
+    获取文件大小（带单位）
     
     Args:
         file_path: 文件路径
         
     Returns:
-        str: 格式化的文件大小（KB）
+        str: 格式化的文件大小（带单位）
     """
-    size_in_bytes = os.path.getsize(file_path)
-    size_in_kb = size_in_bytes / 1024
-    return f"{size_in_kb:.2f} KB"
+    size_bytes = os.path.getsize(file_path)
+    for unit in ['B', 'KB', 'MB']:
+        if size_bytes < 1024:
+            return f"{size_bytes:.1f}{unit}"
+        size_bytes /= 1024
+    return f"{size_bytes:.1f}GB"
 
 def get_file_size_bytes(file_path):
     """
@@ -67,34 +80,28 @@ def get_file_size_bytes(file_path):
     """
     return os.path.getsize(file_path)
 
-def compress_image(input_path, output_path, quality):
+def compress_image(image_path, output_path, quality=None):
     """
     压缩图片
     
     Args:
-        input_path: 输入图片路径
-        output_path: 输出图片路径
-        quality: 压缩质量（1-100）
-        
-    Returns:
-        tuple: (压缩前大小, 压缩后大小, 压缩百分比)
+        image_path: 原图路径
+        output_path: 输出路径
+        quality: 压缩质量 (1-100)，None 时使用默认值
     """
-    # 打开图片
-    img = Image.open(input_path)
+    if quality is None:
+        quality = config.DEFAULT_QUALITY
+    quality = max(config.MIN_QUALITY, min(config.MAX_QUALITY, quality))
     
-    # 保存压缩后的图片
-    img.save(output_path, optimize=True, quality=quality)
-    
-    # 获取压缩前后的文件大小
-    original_size = get_file_size(input_path)
-    compressed_size = get_file_size(output_path)
-    
-    # 计算压缩百分比
-    original_bytes = get_file_size_bytes(input_path)
-    compressed_bytes = get_file_size_bytes(output_path)
-    compression_percent = round((1 - (compressed_bytes / original_bytes)) * 100)
-    
-    return original_size, compressed_size, compression_percent
+    with Image.open(image_path) as img:
+        # 调整图片尺寸
+        if img.width > config.MAX_WIDTH or img.height > config.MAX_HEIGHT:
+            ratio = min(config.MAX_WIDTH/img.width, config.MAX_HEIGHT/img.height)
+            new_size = (int(img.width * ratio), int(img.height * ratio))
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+        
+        # 保存压缩后的图片
+        img.save(output_path, quality=quality, optimize=True)
 
 @app.route('/')
 def index():
@@ -136,17 +143,16 @@ def upload_file():
         
         try:
             # 压缩图片
-            original_size, compressed_size, compression_percent = compress_image(original_path, compressed_path, quality)
-            logger.debug(f"压缩成功: 原始大小 {original_size}, 压缩后大小 {compressed_size}, 压缩率 {compression_percent}%")
+            compress_image(original_path, compressed_path, quality)
+            logger.debug(f"压缩成功: 原始大小 {get_file_size(original_path)}, 压缩后大小 {get_file_size(compressed_path)}")
             
             return jsonify({
                 'success': True,
                 'original_filename': file.filename,
                 'original_image': f"/static/uploads/{original_filename}.{file_ext}",
                 'compressed_image': f"/static/uploads/{original_filename}_compressed.{file_ext}",
-                'original_size': original_size,
-                'compressed_size': compressed_size,
-                'compression_percent': compression_percent,
+                'original_size': get_file_size(original_path),
+                'compressed_size': get_file_size(compressed_path),
                 'filename': f"{original_filename}_compressed.{file_ext}"
             })
         except Exception as e:
@@ -197,15 +203,14 @@ def batch_upload():
             file.save(original_path)
             
             # 压缩图片
-            original_size, compressed_size, compression_percent = compress_image(original_path, compressed_path, quality)
+            compress_image(original_path, compressed_path, quality)
             
             results.append({
                 'original_filename': file.filename,
                 'original_image': f"/static/uploads/{original_filename}.{file_ext}",
                 'compressed_image': f"/static/uploads/{original_filename}_compressed.{file_ext}",
-                'original_size': original_size,
-                'compressed_size': compressed_size,
-                'compression_percent': compression_percent,
+                'original_size': get_file_size(original_path),
+                'compressed_size': get_file_size(compressed_path),
                 'filename': f"{original_filename}_compressed.{file_ext}"
             })
             
@@ -279,6 +284,16 @@ def download_batch():
     except Exception as e:
         logger.error(f"创建压缩包时出错: {str(e)}", exc_info=True)
         return jsonify({'error': f'下载过程中出错: {str(e)}'}), 500
+
+@app.before_first_request
+def before_first_request():
+    """应用启动时的初始化操作"""
+    cleaner.start()
+
+@app.teardown_appcontext
+def teardown_appcontext(exception=None):
+    """应用关闭时的清理操作"""
+    cleaner.stop()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False) 
