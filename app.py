@@ -6,21 +6,20 @@
 """
 
 import os
+import sys
 import uuid
 import logging
-import json
 from flask import Flask, render_template, request, jsonify, send_from_directory, send_file
 from PIL import Image
 from io import BytesIO
 import zipfile
-from utils.cleaner import FileCleaner
 import config
 
 # 配置日志
 logging.basicConfig(
     level=getattr(logging, config.LOG_LEVEL),
     format=config.LOG_FORMAT,
-    filename=config.LOG_FILE
+    stream=sys.stdout  # 输出到控制台
 )
 logger = logging.getLogger(__name__)
 
@@ -32,35 +31,12 @@ app.config['SECRET_KEY'] = config.SECRET_KEY
 # 确保上传目录存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# 初始化文件清理器
-cleaner = FileCleaner()
-
-# 允许的文件类型
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
-
 def allowed_file(filename):
-    """
-    检查文件扩展名是否被允许
-    
-    Args:
-        filename: 要检查的文件名
-        
-    Returns:
-        bool: 如果文件扩展名被允许，返回True
-    """
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    """检查文件扩展名是否被允许"""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in config.ALLOWED_EXTENSIONS
 
 def get_file_size(file_path):
-    """
-    获取文件大小（带单位）
-    
-    Args:
-        file_path: 文件路径
-        
-    Returns:
-        str: 格式化的文件大小（带单位）
-    """
+    """获取文件大小（带单位）"""
     size_bytes = os.path.getsize(file_path)
     for unit in ['B', 'KB', 'MB']:
         if size_bytes < 1024:
@@ -68,40 +44,35 @@ def get_file_size(file_path):
         size_bytes /= 1024
     return f"{size_bytes:.1f}GB"
 
-def get_file_size_bytes(file_path):
+def compress_image(file, quality=None):
     """
-    获取文件大小（字节）
+    压缩图片（直接处理内存中的图片）
     
     Args:
-        file_path: 文件路径
-        
-    Returns:
-        int: 文件大小（字节）
-    """
-    return os.path.getsize(file_path)
-
-def compress_image(image_path, output_path, quality=None):
-    """
-    压缩图片
-    
-    Args:
-        image_path: 原图路径
-        output_path: 输出路径
+        file: 文件对象
         quality: 压缩质量 (1-100)，None 时使用默认值
+    
+    Returns:
+        BytesIO: 压缩后的图片数据
     """
     if quality is None:
         quality = config.DEFAULT_QUALITY
     quality = max(config.MIN_QUALITY, min(config.MAX_QUALITY, quality))
     
-    with Image.open(image_path) as img:
-        # 调整图片尺寸
-        if img.width > config.MAX_WIDTH or img.height > config.MAX_HEIGHT:
-            ratio = min(config.MAX_WIDTH/img.width, config.MAX_HEIGHT/img.height)
-            new_size = (int(img.width * ratio), int(img.height * ratio))
-            img = img.resize(new_size, Image.Resampling.LANCZOS)
-        
-        # 保存压缩后的图片
-        img.save(output_path, quality=quality, optimize=True)
+    # 读取原始图片
+    img = Image.open(file)
+    
+    # 调整图片尺寸
+    if img.width > config.MAX_WIDTH or img.height > config.MAX_HEIGHT:
+        ratio = min(config.MAX_WIDTH/img.width, config.MAX_HEIGHT/img.height)
+        new_size = (int(img.width * ratio), int(img.height * ratio))
+        img = img.resize(new_size, Image.Resampling.LANCZOS)
+    
+    # 压缩到内存
+    output = BytesIO()
+    img.save(output, format=img.format or 'JPEG', quality=quality, optimize=True)
+    output.seek(0)
+    return output
 
 @app.route('/')
 def index():
@@ -120,7 +91,7 @@ def upload_file():
     file = request.files['file']
     logger.debug(f"文件名: {file.filename}")
     
-    quality = int(request.form.get('quality', 80))
+    quality = int(request.form.get('quality', config.DEFAULT_QUALITY))
     logger.debug(f"压缩质量: {quality}")
     
     if file.filename == '':
@@ -128,35 +99,39 @@ def upload_file():
         return jsonify({'error': '没有选择文件'}), 400
     
     if file and allowed_file(file.filename):
-        # 生成唯一文件名
-        original_filename = str(uuid.uuid4())
-        file_ext = file.filename.rsplit('.', 1)[1].lower()
-        original_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{original_filename}.{file_ext}")
-        compressed_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{original_filename}_compressed.{file_ext}")
-        
-        logger.debug(f"原始路径: {original_path}")
-        logger.debug(f"压缩后路径: {compressed_path}")
-        
-        # 保存原始文件
-        file.save(original_path)
-        logger.debug("原始文件已保存")
-        
         try:
+            # 生成唯一文件名
+            original_filename = str(uuid.uuid4())
+            file_ext = file.filename.rsplit('.', 1)[1].lower()
+            
             # 压缩图片
-            compress_image(original_path, compressed_path, quality)
-            logger.debug(f"压缩成功: 原始大小 {get_file_size(original_path)}, 压缩后大小 {get_file_size(compressed_path)}")
+            compressed_data = compress_image(file, quality)
+            
+            # 计算原始大小
+            file.seek(0, 2)  # 移动到文件末尾
+            original_size = file.tell()
+            file.seek(0)  # 重置文件指针
+            
+            # 计算压缩后大小
+            compressed_size = compressed_data.getbuffer().nbytes
+            
+            # 保存到临时目录
+            compressed_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{original_filename}_compressed.{file_ext}")
+            with open(compressed_path, 'wb') as f:
+                f.write(compressed_data.getvalue())
             
             return jsonify({
                 'success': True,
                 'original_filename': file.filename,
-                'original_image': f"/static/uploads/{original_filename}.{file_ext}",
-                'compressed_image': f"/static/uploads/{original_filename}_compressed.{file_ext}",
-                'original_size': get_file_size(original_path),
-                'compressed_size': get_file_size(compressed_path),
+                'compressed_image': f"/download/{original_filename}_compressed.{file_ext}",
+                'original_size': f"{original_size/1024:.1f}KB",
+                'compressed_size': f"{compressed_size/1024:.1f}KB",
+                'compression_ratio': f"{(1 - compressed_size/original_size) * 100:.1f}%",
                 'filename': f"{original_filename}_compressed.{file_ext}"
             })
+            
         except Exception as e:
-            logger.error(f"压缩过程中出错: {str(e)}")
+            logger.error(f"压缩过程中出错: {str(e)}", exc_info=True)
             return jsonify({'error': f'压缩过程中出错: {str(e)}'}), 500
     
     logger.error("不支持的文件类型")
@@ -174,7 +149,7 @@ def batch_upload():
     files = request.files.getlist('files[]')
     logger.debug(f"文件数量: {len(files)}")
     
-    quality = int(request.form.get('quality', 80))
+    quality = int(request.form.get('quality', config.DEFAULT_QUALITY))
     logger.debug(f"压缩质量: {quality}")
     
     if not files or len(files) == 0:
@@ -196,26 +171,34 @@ def batch_upload():
             # 生成唯一文件名
             original_filename = str(uuid.uuid4())
             file_ext = file.filename.rsplit('.', 1)[1].lower()
-            original_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{original_filename}.{file_ext}")
-            compressed_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{original_filename}_compressed.{file_ext}")
-            
-            # 保存原始文件
-            file.save(original_path)
             
             # 压缩图片
-            compress_image(original_path, compressed_path, quality)
+            compressed_data = compress_image(file, quality)
+            
+            # 计算原始大小
+            file.seek(0, 2)
+            original_size = file.tell()
+            file.seek(0)
+            
+            # 计算压缩后大小
+            compressed_size = compressed_data.getbuffer().nbytes
+            
+            # 保存到临时目录
+            compressed_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{original_filename}_compressed.{file_ext}")
+            with open(compressed_path, 'wb') as f:
+                f.write(compressed_data.getvalue())
             
             results.append({
                 'original_filename': file.filename,
-                'original_image': f"/static/uploads/{original_filename}.{file_ext}",
-                'compressed_image': f"/static/uploads/{original_filename}_compressed.{file_ext}",
-                'original_size': get_file_size(original_path),
-                'compressed_size': get_file_size(compressed_path),
+                'compressed_image': f"/download/{original_filename}_compressed.{file_ext}",
+                'original_size': f"{original_size/1024:.1f}KB",
+                'compressed_size': f"{compressed_size/1024:.1f}KB",
+                'compression_ratio': f"{(1 - compressed_size/original_size) * 100:.1f}%",
                 'filename': f"{original_filename}_compressed.{file_ext}"
             })
             
         except Exception as e:
-            logger.error(f"处理文件 {file.filename} 时出错: {str(e)}")
+            logger.error(f"处理文件 {file.filename} 时出错: {str(e)}", exc_info=True)
             errors.append(f"处理文件 {file.filename} 时出错: {str(e)}")
     
     return jsonify({
@@ -226,8 +209,16 @@ def batch_upload():
 
 @app.route('/download/<filename>')
 def download_file(filename):
-    """下载单个压缩后的图片"""
-    return send_from_directory(directory=app.config['UPLOAD_FOLDER'], path=filename, as_attachment=True)
+    """下载压缩后的图片"""
+    try:
+        return send_from_directory(
+            directory=app.config['UPLOAD_FOLDER'],
+            path=filename,
+            as_attachment=True
+        )
+    except Exception as e:
+        logger.error(f"下载文件时出错: {str(e)}", exc_info=True)
+        return jsonify({'error': '文件不存在或已过期'}), 404
 
 @app.route('/download-batch', methods=['POST'])
 def download_batch():
@@ -244,35 +235,19 @@ def download_batch():
         memory_file = BytesIO()
         with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
             files_added = 0
-            for i, filename in enumerate(filenames):
-                # 安全检查，确保文件在上传目录中
-                if '..' in filename or filename.startswith('/'):
-                    logger.warning(f"跳过不安全的文件路径: {filename}")
-                    continue
-                
+            for filename in filenames:
                 file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                 if os.path.exists(file_path):
-                    # 获取原始文件名（去掉UUID部分）
-                    if '_compressed.' in filename:
-                        original_filename = filename.split('_compressed.')[-1]
-                    else:
-                        original_filename = filename
-                        
-                    # 如果有多个同名文件，添加数字后缀
-                    if filenames.count(filename) > 1:
-                        base_name, ext = original_filename.rsplit('.', 1)
-                        original_filename = f"{base_name}_{i+1}.{ext}"
-                    
-                    zf.write(file_path, arcname=original_filename)
+                    zf.write(file_path, filename)
                     files_added += 1
-                    logger.debug(f"添加文件到压缩包: {filename} -> {original_filename}")
+                    logger.debug(f"添加文件到压缩包: {filename}")
                 else:
                     logger.warning(f"文件不存在: {file_path}")
-                    
+        
         if files_added == 0:
-            return jsonify({'error': '所选文件均不存在或无效'}), 404
-            
-        # 设置文件指针到文件开头
+            return jsonify({'error': '所选文件均不存在或已过期'}), 404
+        
+        # 设置文件指针到开头
         memory_file.seek(0)
         
         return send_file(
@@ -281,19 +256,10 @@ def download_batch():
             as_attachment=True,
             download_name='compressed_images.zip'
         )
+        
     except Exception as e:
         logger.error(f"创建压缩包时出错: {str(e)}", exc_info=True)
         return jsonify({'error': f'下载过程中出错: {str(e)}'}), 500
-
-@app.before_first_request
-def before_first_request():
-    """应用启动时的初始化操作"""
-    cleaner.start()
-
-@app.teardown_appcontext
-def teardown_appcontext(exception=None):
-    """应用关闭时的清理操作"""
-    cleaner.stop()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False) 

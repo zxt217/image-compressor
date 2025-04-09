@@ -2,10 +2,11 @@
 配置文件
 """
 import os
+import tempfile
 from datetime import timedelta
 
 # 文件上传配置
-UPLOAD_FOLDER = 'static/uploads'
+UPLOAD_FOLDER = os.path.join(tempfile.gettempdir(), 'uploads')  # 使用系统临时目录
 MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
@@ -17,8 +18,8 @@ MAX_WIDTH = 1920     # 最大宽度
 MAX_HEIGHT = 1080    # 最大高度
 
 # 文件清理配置
-FILE_RETENTION_DAYS = 7  # 文件保留天数
-CLEANUP_INTERVAL = timedelta(hours=24)  # 清理间隔
+FILE_RETENTION_DAYS = 1  # 文件保留天数（在 Vercel 上降低为1天）
+CLEANUP_INTERVAL = timedelta(hours=1)  # 清理间隔（在 Vercel 上降低为1小时）
 
 # 日志配置
 LOG_LEVEL = 'INFO'
